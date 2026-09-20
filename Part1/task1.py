@@ -4,7 +4,6 @@ import numpy as np
 
 pd.set_option("display.width", 140)
 pd.set_option("display.max_columns", 25)
-RNG = 42
 
 # --- Plot styling
 CAT = {
