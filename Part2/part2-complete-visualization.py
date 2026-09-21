@@ -45,8 +45,8 @@ mpl.rcParams.update({
     "legend.frameon": False, "figure.dpi": 100, "savefig.dpi": 150, "savefig.bbox": "tight",
 })
 
-DATA_DIR = "./Part2/data"          # expects data/images/*.tif and data/gt/*.tif alongside this notebook
-CKPT_DIR = "./Part2/checkpoints"
+DATA_DIR = ".\\Part2\\data"          # expects data/images/*.tif and data/gt/*.tif alongside this notebook
+CKPT_DIR = ".\\Part2\\checkpoints"
 
 SEEN_CITIES = ["austin", "chicago", "tyrol-w", "vienna"]
 HELD_OUT_CITY = "kitsap"
@@ -280,3 +280,160 @@ axes[0].imshow(sample_img.numpy().transpose(1, 2, 0)); axes[0].set_title(f"Aeria
 axes[1].imshow(sample_mask[0].numpy(), cmap="gray"); axes[1].set_title("Ground-truth mask"); axes[1].axis("off")
 axes[2].imshow(band, cmap="magma"); axes[2].set_title("Boundary weight band (loss term 3)"); axes[2].axis("off")
 fig.tight_layout(); plt.show()
+
+EPS = 1e-7
+
+def _np(x): return np.asarray(x.detach().cpu().numpy() if hasattr(x, "detach") else x).astype(np.uint8)
+
+def iou_score(pred, target):
+    pred, target = _np(pred), _np(target)
+    union = np.logical_or(pred, target).sum()
+    return 1.0 if union == 0 else np.logical_and(pred, target).sum() / (union + EPS)
+
+def dice_score(pred, target):
+    pred, target = _np(pred), _np(target)
+    denom = pred.sum() + target.sum()
+    return 1.0 if denom == 0 else 2*np.logical_and(pred, target).sum() / (denom + EPS)
+
+def precision_score(pred, target):
+    pred, target = _np(pred), _np(target)
+    tp = np.logical_and(pred, target).sum(); fp = np.logical_and(pred, np.logical_not(target)).sum()
+    if tp+fp == 0: return 1.0 if target.sum() == 0 else 0.0
+    return tp / (tp+fp+EPS)
+
+def recall_score(pred, target):
+    pred, target = _np(pred), _np(target)
+    tp = np.logical_and(pred, target).sum(); fn = np.logical_and(np.logical_not(pred), target).sum()
+    if tp+fn == 0: return 1.0 if pred.sum() == 0 else 0.0
+    return tp / (tp+fn+EPS)
+
+def _boundary_mask(mask, dilation_ratio=0.02):
+    h, w = mask.shape
+    radius = max(1, round(dilation_ratio * (h+w) / 2))
+    eroded = binary_erosion(mask.astype(bool), iterations=radius, border_value=0)
+    return np.logical_and(mask.astype(bool), np.logical_not(eroded))
+
+def boundary_iou(pred, target, dilation_ratio=0.02):
+    pred, target = _np(pred), _np(target)
+    pb, tb = _boundary_mask(pred, dilation_ratio), _boundary_mask(target, dilation_ratio)
+    union = np.logical_or(pb, tb).sum()
+    return 1.0 if union == 0 else np.logical_and(pb, tb).sum() / (union + EPS)
+
+def compute_all(pred, target):
+    return {"iou": iou_score(pred, target), "dice": dice_score(pred, target),
+            "precision": precision_score(pred, target), "recall": recall_score(pred, target),
+            "boundary_iou": boundary_iou(pred, target)}
+
+print("Sanity check on a synthetic mask pair:",
+      compute_all((np.random.RandomState(0).rand(64,64)>0.8).astype(np.uint8),
+                  (np.random.RandomState(0).rand(64,64)>0.8).astype(np.uint8)))
+
+
+
+hist_path = "./Part2/train_history_gpu.csv"
+if os.path.exists(hist_path):
+    hist = pd.read_csv(hist_path)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
+    axes[0].plot(hist["epoch"], hist["train_loss"], color=CAT["blue"], lw=2.2, marker="o")
+    axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Training loss (combined)"); axes[0].set_title("Full Training Run: Loss")
+    axes[1].plot(hist["epoch"], hist["val_iou_quick"], color=CAT["aqua"], lw=2.2, marker="o", label="Quick-val IoU")
+    axes[1].plot(hist["epoch"], hist["val_dice_quick"], color=CAT["orange"], lw=2.2, marker="o", label="Quick-val Dice")
+    axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("Score"); axes[1].set_title("Full Training Run: Monitoring Metrics")
+    axes[1].legend(loc="lower right")
+    fig.tight_layout(); plt.show()
+    print(hist.round(4).to_string(index=False))
+else:
+    print("train_history_gpu.csv not found alongside this notebook -- run scripts/train_gpu.py first.")
+
+
+def evaluate_split(model, ds, split_name):
+    loader = DataLoader(ds, batch_size=16, shuffle=False, num_workers=0)
+    model.eval()
+    rows = []
+    with torch.no_grad():
+        for xb, yb, names in loader:
+            xb = xb.to(device)
+            yb = yb.to(device)
+            pred = (torch.sigmoid(model(xb)) > 0.5).float()
+            for p, t, name in zip(pred, yb, names):
+                p_np, t_np = p[0].detach().cpu().numpy().astype(np.uint8), t[0].detach().cpu().numpy().astype(np.uint8)
+                row = compute_all(p_np, t_np)
+                row["name"] = name; row["gt_frac"] = float(t_np.mean()); row["pred_frac"] = float(p_np.mean())
+                rows.append(row)
+    keys = ["iou", "dice", "precision", "recall", "boundary_iou"]
+    agg = {k: float(np.mean([r[k] for r in rows])) for k in keys}
+    std = {k: float(np.std([r[k] for r in rows])) for k in keys}
+    print(f"\n=== {split_name} ({len(rows)} patches) ===")
+    print("Whole-split (all patches, incl. empty):")
+    for k in keys:
+        print(f"  {k:14s} mean={agg[k]:.4f}  std={std[k]:.4f}")
+
+    nonempty = [r for r in rows if r["gt_frac"] > 0]
+    empty = [r for r in rows if r["gt_frac"] == 0]
+    print(f"\npatches with >=1 building pixel: {len(nonempty)}/{len(rows)} ({len(nonempty)/len(rows)*100:.1f}%)")
+    nonempty_agg = {}
+    if nonempty:
+        nonempty_agg = {k: float(np.mean([r[k] for r in nonempty])) for k in keys}
+        print("Building-containing patches only (the metric that isn't inflated by trivial empty-vs-empty matches):")
+        for k in keys:
+            print(f"  {k:14s} mean={nonempty_agg[k]:.4f}")
+    if empty:
+        fp_rate = float(np.mean([r["pred_frac"] > 0 for r in empty]))
+        print(f"\nFalse-positive rate on truly-empty patches (model predicts a building where there is none): {fp_rate*100:.1f}%")
+
+    return rows, agg, std, nonempty_agg
+
+eval_model = UNet(base=16).to(device)
+ckpt_path = os.path.join(CKPT_DIR, "best_unet.pt")
+if os.path.exists(ckpt_path):
+    eval_model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    print(f"Loaded fully-trained checkpoint: {ckpt_path} on {device}")
+else:
+    print("Full checkpoint not found -- run scripts/train_gpu.py first.")
+
+val_rows, val_agg, val_std, val_ne = evaluate_split(eval_model, val_ds, "VAL (in-domain, held-out tiles)")
+test_rows, test_agg, test_std, test_ne = evaluate_split(eval_model, test_ds, "TEST (out-of-domain, Kitsap, held-out city)")
+
+print("\n=== Naive whole-split gap (VAL - TEST), all patches ===")
+for k in ["iou", "dice", "precision", "recall", "boundary_iou"]:
+    print(f"  {k:14s} gap = {val_agg[k]-test_agg[k]:+.4f}")
+print("\n=== Real gap on building-containing patches only (VAL - TEST) ===")
+for k in ["iou", "dice", "precision", "recall", "boundary_iou"]:
+    print(f"  {k:14s} gap = {val_ne[k]-test_ne[k]:+.4f}")
+
+
+def qualitative_panel(model, ds, split_name, n_examples=3):
+    loader = DataLoader(ds, batch_size=16, shuffle=False, num_workers=0)
+    model.eval()
+    scored = []
+    with torch.no_grad():
+        for xb, yb, names in loader:
+            xb = xb.to(device)
+            yb = yb.to(device)
+            probs = torch.sigmoid(model(xb)); pred = (probs > 0.5).float()
+            for i in range(xb.size(0)):
+                img = xb[i].detach().cpu().numpy().transpose(1, 2, 0)
+                t_np = yb[i, 0].detach().cpu().numpy().astype(np.uint8)
+                p_np = pred[i, 0].detach().cpu().numpy().astype(np.uint8)
+                scored.append({"img": img, "gt": t_np, "pred": p_np,
+                                "iou": iou_score(p_np, t_np), "name": names[i], "gt_frac": t_np.mean()})
+    wb = [s for s in scored if s["gt_frac"] > 0.01]
+    wb.sort(key=lambda s: -s["iou"])
+    picks = wb[:n_examples] + wb[-n_examples:]
+    labels = [f"best #{i+1} (IoU={s['iou']:.2f})" for i, s in enumerate(wb[:n_examples])] + \
+             [f"failure #{i+1} (IoU={s['iou']:.2f})" for i, s in enumerate(wb[-n_examples:])]
+
+    fig, axes = plt.subplots(3, len(picks), figsize=(2.6*len(picks), 8.2))
+    for col, (s, label) in enumerate(zip(picks, labels)):
+        axes[0, col].imshow(s["img"]); axes[0, col].set_title(f"{s['name']}\n{label}", fontsize=8.5); axes[0, col].axis("off")
+        axes[1, col].imshow(s["gt"], cmap="gray", vmin=0, vmax=1); axes[1, col].axis("off")
+        axes[2, col].imshow(s["pred"], cmap="gray", vmin=0, vmax=1); axes[2, col].axis("off")
+    axes[0, 0].set_ylabel("Aerial patch", fontsize=10)
+    axes[1, 0].set_ylabel("Ground truth", fontsize=10)
+    axes[2, 0].set_ylabel("Prediction", fontsize=10)
+    fig.suptitle(f"Qualitative Assessment -- {split_name}: best extractions (left) vs. failure cases (right)",
+                 y=1.02, fontweight="bold", fontsize=12)
+    fig.tight_layout(); plt.show()
+
+qualitative_panel(eval_model, val_ds, "In-Domain Validation")
+qualitative_panel(eval_model, test_ds, "Out-of-Domain Test (Kitsap)")
