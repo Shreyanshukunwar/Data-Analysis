@@ -1,0 +1,55 @@
+Device: cuda  (NVIDIA GeForce RTX 3050 6GB Laptop GPU)
+CPU count: 22  |  CUDA available: True
+Config: base=16 batch=16 steps/epoch=120 epochs=8 lr=0.001 seed=0
+train tiles: [('austin', 1), ('austin', 2), ('austin', 3), ('chicago', 1), ('chicago', 2), ('chicago', 3), ('tyrol-w', 1), ('tyrol-w', 2), ('tyrol-w', 3), ('vienna', 1), ('vienna', 2), ('vienna', 3)]
+val tiles:   [('austin', 4), ('chicago', 4), ('tyrol-w', 4), ('vienna', 4)]
+Tile caches loaded in 4.5s
+train patches: 4332  val patches: 1444
+train building-pixel fraction: 0.1812  pos_weight: 4.519
+model params: 1,942,577
+  epoch 1 step 0/120 loss=2.9966 (bce=2.2464 dice=0.7502)
+  epoch 1 step 30/120 loss=1.9886 (bce=1.3159 dice=0.6727)
+  epoch 1 step 60/120 loss=1.7629 (bce=1.0410 dice=0.7219)
+  epoch 1 step 90/120 loss=1.7904 (bce=1.1096 dice=0.6808)
+EPOCH 1/8 done in 0.4min | train_loss=1.8901 | quick val IoU=0.3363 Dice=0.4493
+  -> new best (quick val IoU=0.3363), saved c:\Extra Stuffs\UNLV - Copy\Data-Analysis\Part2\scripts\..\checkpoints\best_unet.pt
+  epoch 2 step 0/120 loss=1.6173 (bce=1.0330 dice=0.5842)
+  epoch 2 step 30/120 loss=1.6730 (bce=1.0379 dice=0.6352)
+  epoch 2 step 60/120 loss=1.6458 (bce=1.0372 dice=0.6086)
+  epoch 2 step 90/120 loss=1.7745 (bce=1.2094 dice=0.5652)
+EPOCH 2/8 done in 0.3min | train_loss=1.6755 | quick val IoU=0.2559 Dice=0.3579
+  epoch 3 step 0/120 loss=1.6665 (bce=1.1421 dice=0.5244)
+  epoch 3 step 30/120 loss=1.4850 (bce=0.9117 dice=0.5733)
+  epoch 3 step 60/120 loss=1.6700 (bce=1.0045 dice=0.6655)
+  epoch 3 step 90/120 loss=1.5199 (bce=0.9343 dice=0.5856)
+EPOCH 3/8 done in 0.3min | train_loss=1.6177 | quick val IoU=0.3676 Dice=0.4745
+  -> new best (quick val IoU=0.3676), saved c:\Extra Stuffs\UNLV - Copy\Data-Analysis\Part2\scripts\..\checkpoints\best_unet.pt
+  epoch 4 step 0/120 loss=1.5083 (bce=1.0108 dice=0.4975)
+  epoch 4 step 30/120 loss=1.7912 (bce=1.2648 dice=0.5264)
+  epoch 4 step 60/120 loss=1.5683 (bce=1.0086 dice=0.5597)
+  epoch 4 step 90/120 loss=1.5887 (bce=1.0127 dice=0.5759)
+EPOCH 4/8 done in 0.3min | train_loss=1.5802 | quick val IoU=0.4518 Dice=0.5597
+  -> new best (quick val IoU=0.4518), saved c:\Extra Stuffs\UNLV - Copy\Data-Analysis\Part2\scripts\..\checkpoints\best_unet.pt
+  epoch 5 step 0/120 loss=1.5991 (bce=0.9889 dice=0.6102)
+  epoch 5 step 30/120 loss=1.5087 (bce=0.8860 dice=0.6228)
+  epoch 5 step 60/120 loss=1.8366 (bce=1.2037 dice=0.6329)
+  epoch 5 step 90/120 loss=1.3813 (bce=0.8446 dice=0.5367)
+EPOCH 5/8 done in 0.3min | train_loss=1.5712 | quick val IoU=0.4582 Dice=0.5622
+  -> new best (quick val IoU=0.4582), saved c:\Extra Stuffs\UNLV - Copy\Data-Analysis\Part2\scripts\..\checkpoints\best_unet.pt
+  epoch 6 step 0/120 loss=1.5963 (bce=1.0629 dice=0.5334)
+  epoch 6 step 30/120 loss=1.5953 (bce=1.1297 dice=0.4656)
+  epoch 6 step 60/120 loss=1.6214 (bce=1.0821 dice=0.5394)
+  epoch 6 step 90/120 loss=1.4954 (bce=0.9130 dice=0.5824)
+EPOCH 6/8 done in 0.3min | train_loss=1.5390 | quick val IoU=0.4240 Dice=0.5402
+  epoch 7 step 0/120 loss=1.4209 (bce=0.9405 dice=0.4804)
+  epoch 7 step 30/120 loss=1.3911 (bce=0.7449 dice=0.6462)
+  epoch 7 step 60/120 loss=1.4307 (bce=0.8517 dice=0.5790)
+  epoch 7 step 90/120 loss=1.6768 (bce=1.1333 dice=0.5435)
+EPOCH 7/8 done in 0.3min | train_loss=1.5315 | quick val IoU=0.4168 Dice=0.5276
+  epoch 8 step 0/120 loss=1.5562 (bce=1.0067 dice=0.5496)
+  epoch 8 step 30/120 loss=1.5395 (bce=0.9426 dice=0.5969)
+  epoch 8 step 60/120 loss=1.5825 (bce=0.9982 dice=0.5843)
+  epoch 8 step 90/120 loss=1.4677 (bce=0.8369 dice=0.6309)
+EPOCH 8/8 done in 0.3min | train_loss=1.5001 | quick val IoU=0.4324 Dice=0.5360
+
+TRAINING DONE on cuda. best quick-val IoU=0.4582

@@ -1,0 +1,12 @@
+{
+  "base_channels": 16,
+  "batch": 16,
+  "steps_per_epoch": 120,
+  "epochs": 8,
+  "lr": 0.001,
+  "pos_weight": 4.51934324672386,
+  "best_quick_val_iou": 0.45818601553035426,
+  "train_patches": 4332,
+  "val_patches": 1444,
+  "device": "cuda"
+}
