@@ -220,3 +220,63 @@ x_test = torch.randn(2, 3, 256, 256)
 y_test = model(x_test)
 print(f"\nUNet(base=16) parameters: {n_params:,}")
 print(f"sanity check: input {tuple(x_test.shape)} -> output {tuple(y_test.shape)}")
+
+
+################# LOSS FUNCTION ########################
+def boundary_band(mask, iterations=2):
+    '''mask: (N,1,H,W) float {0,1}. dilation-minus-erosion via repeated 3x3 max/min pooling.'''
+    dil = ero = mask
+    for _ in range(iterations):
+        dil = F.max_pool2d(dil, kernel_size=3, stride=1, padding=1)
+        ero = -F.max_pool2d(-ero, kernel_size=3, stride=1, padding=1)
+    return (dil - ero).clamp(0, 1)
+
+class SoftDiceLoss(nn.Module):
+    def __init__(self, smooth=1.0): super().__init__(); self.smooth = smooth
+    def forward(self, logits, target):
+        prob = torch.sigmoid(logits).reshape(logits.size(0), -1)
+        target = target.reshape(target.size(0), -1)
+        inter = (prob * target).sum(dim=1)
+        union = prob.sum(dim=1) + target.sum(dim=1)
+        return 1 - ((2*inter + self.smooth) / (union + self.smooth)).mean()
+
+class BoundaryWeightedBCE(nn.Module):
+    def __init__(self, pos_weight=1.0, boundary_weight=5.0, boundary_iters=2):
+        super().__init__()
+        self.register_buffer("pos_weight", torch.tensor(float(pos_weight)))
+        self.boundary_weight, self.boundary_iters = boundary_weight, boundary_iters
+    def forward(self, logits, target):
+        per_pixel = F.binary_cross_entropy_with_logits(logits, target, pos_weight=self.pos_weight, reduction="none")
+        with torch.no_grad():
+            band = boundary_band(target, self.boundary_iters)
+            weight_map = 1.0 + (self.boundary_weight - 1.0) * band
+        return (per_pixel * weight_map).mean()
+
+class CombinedLoss(nn.Module):
+    def __init__(self, pos_weight=1.0, boundary_weight=5.0, bce_weight=1.0, dice_weight=1.0):
+        super().__init__()
+        self.bce = BoundaryWeightedBCE(pos_weight, boundary_weight)
+        self.dice = SoftDiceLoss()
+        self.bce_weight, self.dice_weight = bce_weight, dice_weight
+    def forward(self, logits, target):
+        bce_l, dice_l = self.bce(logits, target), self.dice(logits, target)
+        total = self.bce_weight*bce_l + self.dice_weight*dice_l
+        return total, {"bce": bce_l.item(), "dice": dice_l.item(), "total": total.item()}
+
+# exact pos_weight from the full train-split pixel counts
+total_pix = sum(m.size for m in train_cache.masks.values())
+pos_pix = sum(int(m.sum()) for m in train_cache.masks.values())
+pos_weight = (total_pix - pos_pix) / pos_pix
+print(f"\ntrain building-pixel fraction: {pos_pix/total_pix:.4f}  ->  pos_weight = {pos_weight:.3f}")
+
+loss_fn = CombinedLoss(pos_weight=pos_weight, boundary_weight=5.0).to(device)
+
+# --- Visualize the boundary band on a real mask patch, to make the loss's boundary term concrete ---
+sample_img, sample_mask, sample_name = train_ds[np.random.RandomState(3).randint(len(train_ds))]
+band = boundary_band(sample_mask.unsqueeze(0), iterations=2)[0, 0].numpy()
+
+fig, axes = plt.subplots(1, 3, figsize=(10, 3.6))
+axes[0].imshow(sample_img.numpy().transpose(1, 2, 0)); axes[0].set_title(f"Aerial patch ({sample_name})"); axes[0].axis("off")
+axes[1].imshow(sample_mask[0].numpy(), cmap="gray"); axes[1].set_title("Ground-truth mask"); axes[1].axis("off")
+axes[2].imshow(band, cmap="magma"); axes[2].set_title("Boundary weight band (loss term 3)"); axes[2].axis("off")
+fig.tight_layout(); plt.show()
